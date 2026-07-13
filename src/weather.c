@@ -9,6 +9,7 @@
 //    IP-geolocated (ip-api.com) unless latitude/longitude or a city are configured.
 #define _GNU_SOURCE
 #include <gtk/gtk.h>
+#include <gdk/gdkkeysyms.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
 #include <math.h>
@@ -347,11 +348,16 @@ static void rebuild_popover(Inst *self) {
   gtk_container_add(GTK_CONTAINER(self->popover), v);
   gtk_widget_show_all(v);
 }
+static gboolean on_pop_key(GtkWidget *w, GdkEventKey *e, gpointer d) {
+  (void)d; if (e->keyval == GDK_KEY_Escape) { gtk_popover_popdown(GTK_POPOVER(w)); return TRUE; }
+  return FALSE;
+}
 static gboolean on_click(GtkWidget *w, GdkEventButton *ev, gpointer data) {
   (void)w; if (ev->button != 1) return FALSE;
   Inst *self = data;
   rebuild_popover(self);
   gtk_popover_popup(GTK_POPOVER(self->popover));
+  gtk_widget_grab_focus(self->popover);   // so Escape reaches it
   return TRUE;
 }
 
@@ -394,6 +400,9 @@ void *wbcffi_init(const wbcffi_init_info *info,
   self->popover = gtk_popover_new(self->box);
   gtk_popover_set_position(GTK_POPOVER(self->popover), GTK_POS_BOTTOM);
   gtk_popover_set_constrain_to(GTK_POPOVER(self->popover), GTK_POPOVER_CONSTRAINT_NONE);
+  gtk_popover_set_modal(GTK_POPOVER(self->popover), TRUE);   // click-outside dismisses
+  gtk_widget_add_events(self->popover, GDK_KEY_PRESS_MASK);
+  g_signal_connect(self->popover, "key-press-event", G_CALLBACK(on_pop_key), NULL);
   g_signal_connect(self->box, "button-press-event", G_CALLBACK(on_click), self);
   gtk_container_add(root, self->box);
   gtk_widget_show_all(GTK_WIDGET(root));
