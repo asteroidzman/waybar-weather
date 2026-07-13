@@ -1,14 +1,12 @@
 # waybar-weather
 
-A [waybar](https://github.com/Alexays/Waybar) **CFFI plugin** for weather, styled
-after the [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell)
-(DMS) weather widget.
+A [waybar](https://github.com/Alexays/Waybar) **CFFI plugin** for weather.
 
 ## Features
 
 - **Bar pill:** a condition icon (nf-md-weather glyph, day/night aware, mapped
   from the WMO code) + the current temperature — e.g. ` 26°C`.
-- **Click → forecast popover** (the DMS DankDash weather layout):
+- **Click → forecast popover:**
   - current conditions: big icon, temperature, condition, feels-like, city;
   - metrics grid: humidity, wind, pressure, precipitation chance, sunrise, sunset;
   - a **7-day forecast** row: day · icon · hi/lo.

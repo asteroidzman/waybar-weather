@@ -1,10 +1,10 @@
-// waybar CFFI plugin: weather, styled after the DankMaterialShell (DMS) widget.
+// waybar CFFI plugin: weather.
 //
 //  - Bar pill: [condition icon] NN°  (nf-md-weather glyph mapped from the WMO
 //    code, day/night aware) + temperature.
 //  - Click opens a popover: current conditions (big icon, temp, feels-like,
 //    condition, city), a metrics grid (humidity/wind/pressure/precip/sun) and a
-//    7-day forecast row (day · icon · hi/lo) — the DMS DankDash weather layout.
+//    7-day forecast row (day · icon · hi/lo).
 //  - Data: open-meteo (no API key), fetched with curl every 15 min. Location is
 //    IP-geolocated (ip-api.com) unless latitude/longitude or a city are configured.
 #define _GNU_SOURCE
