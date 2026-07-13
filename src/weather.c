@@ -54,13 +54,43 @@ static const char *wmo_icon(int code, gboolean day) {
     default:                   return "cloud.svg";
   }
 }
-static GtkWidget *wx_image(Inst *self, const char *name, int size) {
-  char *p = g_build_filename(self->icon_dir, name, NULL);
-  GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_size(p, size, size, NULL);
+// Load an SVG and recolour the silhouette to the widget's theme colour.
+static GdkPixbuf *themed_pixbuf(GtkWidget *w, const char *dir, int size, const char *name) {
+  char *p = g_build_filename(dir, name, NULL);
+  GdkPixbuf *src = gdk_pixbuf_new_from_file_at_size(p, size, size, NULL);
   g_free(p);
-  GtkWidget *im = pb ? gtk_image_new_from_pixbuf(pb) : gtk_image_new();
-  if (pb) g_object_unref(pb);
+  if (!src) return NULL;
+  GdkPixbuf *d = gdk_pixbuf_get_has_alpha(src) ? gdk_pixbuf_copy(src)
+                                               : gdk_pixbuf_add_alpha(src, FALSE, 0, 0, 0);
+  g_object_unref(src);
+  GdkRGBA c; GtkStyleContext *sc = gtk_widget_get_style_context(w);
+  gtk_style_context_get_color(sc, gtk_style_context_get_state(sc), &c);
+  guchar R = (guchar)(c.red*255), G = (guchar)(c.green*255), B = (guchar)(c.blue*255);
+  int wd = gdk_pixbuf_get_width(d), h = gdk_pixbuf_get_height(d);
+  int rs = gdk_pixbuf_get_rowstride(d), nc = gdk_pixbuf_get_n_channels(d);
+  guchar *px = gdk_pixbuf_get_pixels(d);
+  for (int y = 0; y < h; y++) for (int x = 0; x < wd; x++) {
+    guchar *q = px + y*rs + x*nc; q[0]=R; q[1]=G; q[2]=B;
+    if (nc == 4) q[3] = (guchar)(q[3]*c.alpha);
+  }
+  return d;
+}
+static void icon_restyle(GtkWidget *img, gpointer data) {
+  Inst *self = data;
+  const char *name = g_object_get_data(G_OBJECT(img), "svg");
+  if (!name) return;
+  int sz = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(img), "sz"));
+  if (sz <= 0) sz = self->icon_size;
+  GdkPixbuf *pb = themed_pixbuf(img, self->icon_dir, sz, name);
+  if (pb) { gtk_image_set_from_pixbuf(GTK_IMAGE(img), pb); g_object_unref(pb); }
+}
+static GtkWidget *wx_image(Inst *self, const char *name, int size) {
+  GtkWidget *im = gtk_image_new();
   gtk_widget_set_valign(im, GTK_ALIGN_CENTER);
+  g_object_set_data_full(G_OBJECT(im), "svg", g_strdup(name), g_free);
+  g_object_set_data(G_OBJECT(im), "sz", GINT_TO_POINTER(size));
+  g_signal_connect(im, "style-updated", G_CALLBACK(icon_restyle), self);
+  icon_restyle(im, self);
   return im;
 }
 
@@ -109,10 +139,8 @@ static void day_name(const char *iso, int idx, char *out, size_t n) {
 
 // ─── bar ─────────────────────────────────────────────────────────────────────
 static void set_bar_icon(Inst *self, const char *name) {
-  char *p = g_build_filename(self->icon_dir, name, NULL);
-  GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_size(p, self->icon_size, self->icon_size, NULL);
-  g_free(p);
-  if (pb) { gtk_image_set_from_pixbuf(GTK_IMAGE(self->icon), pb); g_object_unref(pb); }
+  g_object_set_data_full(G_OBJECT(self->icon), "svg", g_strdup(name), g_free);
+  icon_restyle(self->icon, self);
 }
 static void update_bar(Inst *self) {
   if (!self->available) {
