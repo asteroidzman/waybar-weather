@@ -4,13 +4,15 @@ CFLAGS  ?= -O2 -Wall -Wextra
 CFLAGS  += -fPIC $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS)) -lm
 PREFIX  ?= $(HOME)/.local/lib/waybar
+DATADIR ?= $(HOME)/.local/share/waybar-weather
 
 $(PLUGIN): src/weather.c
 	$(CC) $(CFLAGS) -shared -o $@ $< $(LDLIBS)
 
 install: $(PLUGIN)
 	install -Dm755 $(PLUGIN) $(PREFIX)/$(PLUGIN)
-	@echo "installed to $(PREFIX)/$(PLUGIN)"
+	install -Dm644 -t $(DATADIR) assets/sunny.svg assets/night.svg assets/pcloudy.svg assets/npcloudy.svg assets/cloud.svg assets/fog.svg assets/rain.svg assets/pour.svg assets/snow.svg assets/heavy-snow.svg assets/tstorm.svg
+	@echo "installed to $(PREFIX)/$(PLUGIN) + icons in $(DATADIR)"
 
 clean:
 	rm -f $(PLUGIN)

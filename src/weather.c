@@ -35,26 +35,36 @@ typedef struct {
   char sunrise[8], sunset[8];
   Day days[7]; int ndays;
   guint timer; GCancellable *cancel;
+  char *icon_dir; int icon_size;
 } Inst;
 
-// ─── WMO weather_code → nf-md-weather glyph + condition text ─────────────────
-static const char *wmo_glyph(int code, gboolean day) {
+// WMO weather_code → crafted icon filename (parallels wmo_glyph)
+static const char *wmo_icon(int code, gboolean day) {
   switch (code) {
-    case 0: case 1:            return day ? "\xf3\xb0\x96\x99" : "\xf3\xb0\x96\x94"; // sunny / night
-    case 2:                    return day ? "\xf3\xb0\x96\x95" : "\xf3\xb0\xbc\xb1"; // partly-cloudy day/night
-    case 3:                    return "\xf3\xb0\x96\x90";  // cloudy
-    case 45: case 48:          return "\xf3\xb0\x96\x91";  // fog
-    case 65: case 67: case 82: return "\xf3\xb0\x96\x96";  // pouring (heavy rain/showers)
+    case 0: case 1:            return day ? "sunny.svg" : "night.svg";
+    case 2:                    return day ? "pcloudy.svg" : "npcloudy.svg";
+    case 3:                    return "cloud.svg";
+    case 45: case 48:          return "fog.svg";
+    case 65: case 67: case 82: return "pour.svg";
     case 51: case 53: case 55: case 56: case 57:
-    case 61: case 63: case 66: case 80: case 81:
-                               return "\xf3\xb0\x96\x97";  // rainy
-    case 75: case 86:          return "\xf3\xb0\xbc\xb6";  // heavy snow
-    case 71: case 73: case 77: case 85:
-                               return "\xf3\xb0\x96\x98";  // snowy
-    case 95: case 96: case 99: return "\xf3\xb0\x99\xbe";  // thunderstorm
-    default:                   return "\xf3\xb0\x96\x90";  // cloud
+    case 61: case 63: case 66: case 80: case 81: return "rain.svg";
+    case 75: case 86:          return "heavy-snow.svg";
+    case 71: case 73: case 77: case 85: return "snow.svg";
+    case 95: case 96: case 99: return "tstorm.svg";
+    default:                   return "cloud.svg";
   }
 }
+static GtkWidget *wx_image(Inst *self, const char *name, int size) {
+  char *p = g_build_filename(self->icon_dir, name, NULL);
+  GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_size(p, size, size, NULL);
+  g_free(p);
+  GtkWidget *im = pb ? gtk_image_new_from_pixbuf(pb) : gtk_image_new();
+  if (pb) g_object_unref(pb);
+  gtk_widget_set_valign(im, GTK_ALIGN_CENTER);
+  return im;
+}
+
+// ─── WMO weather_code → condition text ───────────────────────────────────────
 static const char *wmo_text(int code) {
   switch (code) {
     case 0: case 1: return "Clear";
@@ -98,14 +108,20 @@ static void day_name(const char *iso, int idx, char *out, size_t n) {
 }
 
 // ─── bar ─────────────────────────────────────────────────────────────────────
+static void set_bar_icon(Inst *self, const char *name) {
+  char *p = g_build_filename(self->icon_dir, name, NULL);
+  GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_size(p, self->icon_size, self->icon_size, NULL);
+  g_free(p);
+  if (pb) { gtk_image_set_from_pixbuf(GTK_IMAGE(self->icon), pb); g_object_unref(pb); }
+}
 static void update_bar(Inst *self) {
   if (!self->available) {
-    gtk_label_set_text(GTK_LABEL(self->icon), "\xf3\xb0\x96\x90");   // cloud
+    set_bar_icon(self, "cloud.svg");
     char t[16]; g_snprintf(t, sizeof t, "--%s", unit_suffix(self));
     gtk_label_set_text(GTK_LABEL(self->label), t);
     return;
   }
-  gtk_label_set_text(GTK_LABEL(self->icon), wmo_glyph(self->code, self->isDay));
+  set_bar_icon(self, wmo_icon(self->code, self->isDay));
   char t[24]; g_snprintf(t, sizeof t, "%d%s", to_unit(self, self->temp), unit_suffix(self));
   gtk_label_set_text(GTK_LABEL(self->label), t);
 }
@@ -278,7 +294,7 @@ static void rebuild_popover(Inst *self) {
 
   // hero: big icon + temp + condition/feels/city
   GtkWidget *hero = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 16);
-  GtkWidget *bigicon = gtk_label_new(wmo_glyph(self->code, self->isDay));
+  GtkWidget *bigicon = wx_image(self, wmo_icon(self->code, self->isDay), 64);
   gtk_style_context_add_class(gtk_widget_get_style_context(bigicon), "wx-hero-icon");
   GtkWidget *hcol = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
   char buf[96];
@@ -333,7 +349,7 @@ static void rebuild_popover(Inst *self) {
     gtk_style_context_add_class(gtk_widget_get_style_context(cell), i == 0 ? "wx-day wx-today" : "wx-day");
     GtkWidget *dn = gtk_label_new(day->day);
     gtk_style_context_add_class(gtk_widget_get_style_context(dn), "wx-dayname");
-    GtkWidget *di = gtk_label_new(wmo_glyph(day->code, TRUE));
+    GtkWidget *di = wx_image(self, wmo_icon(day->code, TRUE), 34);
     gtk_style_context_add_class(gtk_widget_get_style_context(di), "wx-dayicon");
     char hilo[24]; g_snprintf(hilo, sizeof hilo, "%d\xc2\xb0/%d\xc2\xb0", to_unit(self, day->tmax), to_unit(self, day->tmin));
     GtkWidget *tl = gtk_label_new(hilo);
@@ -370,7 +386,7 @@ static gboolean debug_popup(gpointer d) {   // WX_DEBUG_POPUP test hook
 void *wbcffi_init(const wbcffi_init_info *info,
                   const wbcffi_config_entry *entries, size_t entries_len) {
   Inst *self = g_new0(Inst, 1);
-  self->interval = 900;
+  self->interval = 900; self->icon_size = 24;
   gboolean has_lat = FALSE, has_lon = FALSE;
   for (size_t i = 0; i < entries_len; i++) {
     const char *k = entries[i].key, *v = entries[i].value;
@@ -379,8 +395,15 @@ void *wbcffi_init(const wbcffi_init_info *info,
     else if (!strcmp(k, "location")) self->cfg_city = g_strdup(v);
     else if (!strcmp(k, "fahrenheit")) self->fahrenheit = atoi(v) != 0;
     else if (!strcmp(k, "interval")) { self->interval = atoi(v); if (self->interval < 300) self->interval = 300; }
+    else if (!strcmp(k, "icon-size")) { self->icon_size = atoi(v); if (self->icon_size < 8) self->icon_size = 8; }
+    else if (!strcmp(k, "icon-dir")) { g_free(self->icon_dir); self->icon_dir = g_strdup(v); }
   }
   self->cfg_coords = has_lat && has_lon;
+  if (!self->icon_dir) {
+    const char *dh = g_getenv("XDG_DATA_HOME");
+    self->icon_dir = (dh && *dh) ? g_build_filename(dh, "waybar-weather", NULL)
+                                 : g_build_filename(g_get_home_dir(), ".local/share/waybar-weather", NULL);
+  }
   self->cancel = g_cancellable_new();
 
   GtkContainer *root = info->get_root_widget(info->obj);
@@ -390,9 +413,10 @@ void *wbcffi_init(const wbcffi_init_info *info,
   gtk_widget_set_margin_start(self->box, 8);
   gtk_widget_set_margin_end(self->box, 8);
   GtkWidget *h = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  self->icon = gtk_label_new("\xf3\xb0\x96\x90");
+  self->icon = wx_image(self, "cloud.svg", self->icon_size);
   gtk_style_context_add_class(gtk_widget_get_style_context(self->icon), "wx-icon");
   self->label = gtk_label_new("--");
+  gtk_widget_set_valign(self->label, GTK_ALIGN_CENTER);
   gtk_style_context_add_class(gtk_widget_get_style_context(self->label), "wx-label");
   gtk_box_pack_start(GTK_BOX(h), self->icon, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(h), self->label, FALSE, FALSE, 0);
@@ -420,5 +444,6 @@ void wbcffi_deinit(void *instance) {
   if (self->timer) g_source_remove(self->timer);
   g_clear_object(&self->cancel);
   g_free(self->cfg_city);
+  g_free(self->icon_dir);
   g_free(self);
 }
