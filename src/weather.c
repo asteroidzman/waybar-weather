@@ -9,7 +9,7 @@
 //    IP-geolocated (ip-api.com) unless latitude/longitude or a city are configured.
 #define _GNU_SOURCE
 #include <gtk/gtk.h>
-#include <gtk-layer-shell.h>
+#include "wbcommon.h"
 #include <gdk/gdkkeysyms.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
@@ -37,7 +37,7 @@ typedef struct {
   Day days[7]; int ndays;
   guint timer; GCancellable *cancel;
   char *icon_dir; int icon_size;
-  int pill_x, pill_w, armed;   // popup positioning + focus-loss arm guard
+  WbPop pop;
 } Inst;
 
 // WMO weather_code → crafted icon filename (parallels wmo_glyph)
@@ -56,34 +56,13 @@ static const char *wmo_icon(int code, gboolean day) {
     default:                   return "cloud.svg";
   }
 }
-// Load an SVG and recolour the silhouette to the widget's theme colour.
-static GdkPixbuf *themed_pixbuf(GtkWidget *w, const char *dir, int size, const char *name) {
-  char *p = g_build_filename(dir, name, NULL);
-  GdkPixbuf *src = gdk_pixbuf_new_from_file_at_size(p, size, size, NULL);
-  g_free(p);
-  if (!src) return NULL;
-  GdkPixbuf *d = gdk_pixbuf_get_has_alpha(src) ? gdk_pixbuf_copy(src)
-                                               : gdk_pixbuf_add_alpha(src, FALSE, 0, 0, 0);
-  g_object_unref(src);
-  GdkRGBA c; GtkStyleContext *sc = gtk_widget_get_style_context(w);
-  gtk_style_context_get_color(sc, gtk_style_context_get_state(sc), &c);
-  guchar R = (guchar)(c.red*255), G = (guchar)(c.green*255), B = (guchar)(c.blue*255);
-  int wd = gdk_pixbuf_get_width(d), h = gdk_pixbuf_get_height(d);
-  int rs = gdk_pixbuf_get_rowstride(d), nc = gdk_pixbuf_get_n_channels(d);
-  guchar *px = gdk_pixbuf_get_pixels(d);
-  for (int y = 0; y < h; y++) for (int x = 0; x < wd; x++) {
-    guchar *q = px + y*rs + x*nc; q[0]=R; q[1]=G; q[2]=B;
-    if (nc == 4) q[3] = (guchar)(q[3]*c.alpha);
-  }
-  return d;
-}
 static void icon_restyle(GtkWidget *img, gpointer data) {
   Inst *self = data;
   const char *name = g_object_get_data(G_OBJECT(img), "svg");
   if (!name) return;
   int sz = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(img), "sz"));
   if (sz <= 0) sz = self->icon_size;
-  GdkPixbuf *pb = themed_pixbuf(img, self->icon_dir, sz, name);
+  GdkPixbuf *pb = wb_themed_pixbuf(img, self->icon_dir, sz, name);
   if (pb) { gtk_image_set_from_pixbuf(GTK_IMAGE(img), pb); g_object_unref(pb); }
 }
 static GtkWidget *wx_image(Inst *self, const char *name, int size) {
@@ -397,51 +376,10 @@ static void rebuild_popover(Inst *self) {
   gtk_container_add(GTK_CONTAINER(self->popover), v);
   gtk_widget_show_all(v);
 }
-// The popover is a dedicated layer-shell window (like swaync's panel), not a
-// Content-sized layer-shell window popup. Gets on-demand keyboard focus on map,
-// and closes on focus-loss (on focus-follows-mouse: when the pointer moves to any
-// other surface) or Escape. `armed` guards the initial map transient. exclusive-
-// zone -1 lets it position at absolute screen coords (below the pill).
-static void pop_hide(Inst *self) { gtk_widget_hide(self->popover); }
-static gboolean arm_cb(gpointer d) { ((Inst *)d)->armed = 1; return G_SOURCE_REMOVE; }
-static gboolean on_pop_key(GtkWidget *w, GdkEventKey *e, gpointer d) {
-  (void)w; Inst *self = d;
-  if (e->keyval == GDK_KEY_Escape) { pop_hide(self); return TRUE; }
-  return FALSE;
-}
-static void on_pop_focus(GObject *win, GParamSpec *ps, gpointer d) {
-  (void)ps; Inst *self = d;
-  if (self->armed && gtk_widget_get_visible(self->popover) &&
-      !gtk_window_has_toplevel_focus(GTK_WINDOW(win)))
-    pop_hide(self);
-}
-static gboolean recenter(gpointer d) {
-  Inst *self = d;
-  int w = gtk_widget_get_allocated_width(self->popover);
-  int mx = self->pill_x + self->pill_w / 2 - w / 2;
-  if (mx < 4) mx = 4;
-  gtk_layer_set_margin(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_EDGE_LEFT, mx);
-  return G_SOURCE_REMOVE;
-}
-static void pop_show(Inst *self) {
-  rebuild_popover(self);
-  GtkWidget *top = gtk_widget_get_toplevel(self->box);
-  int x = 0, y = 0, yb = 0, dummy = 0;
-  if (GTK_IS_WIDGET(top)) {
-    gtk_widget_translate_coordinates(self->box, top, 0, 0, &x, &y);
-    gtk_widget_translate_coordinates(self->box, top, 0,
-                                     gtk_widget_get_allocated_height(self->box), &dummy, &yb);
-  }
-  self->pill_x = x;
-  self->pill_w = gtk_widget_get_allocated_width(self->box);
-  gtk_layer_set_margin(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_EDGE_LEFT, x > 4 ? x : 4);
-  gtk_layer_set_margin(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_EDGE_TOP, yb > 0 ? yb + 2 : 60);
-  self->armed = 0;
-  gtk_widget_show_all(self->popover);
-  gtk_widget_grab_focus(self->popover);
-  g_timeout_add(250, arm_cb, self);   // ignore the map-time focus transient
-  g_idle_add(recenter, self);         // centre once the window has its real width
-}
+static void rebuild_popover(Inst *self);
+static void wbpop_rebuild_cb(gpointer user) { rebuild_popover(user); }
+static void pop_show(Inst *self) { wbpop_show(&self->pop); }
+static void pop_hide(Inst *self) { wbpop_hide(&self->pop); }
 static gboolean on_click(GtkWidget *w, GdkEventButton *ev, gpointer data) {
   (void)w; if (ev->button != 1) return FALSE;
   Inst *self = data;
@@ -495,20 +433,8 @@ void *wbcffi_init(const wbcffi_init_info *info,
   gtk_container_add(GTK_CONTAINER(self->box), h);
   // Content-sized layer-shell window popup (blurrable). Positioned under the pill;
   // closes on focus-loss + Escape.
-  self->popover = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_widget_set_name(self->popover, "cffi-popwin");
-  { GdkVisual *rgba = gdk_screen_get_rgba_visual(gtk_widget_get_screen(self->popover));
-    if (rgba) gtk_widget_set_visual(self->popover, rgba); }   // alpha channel; GTK still paints the CSS bg
-  gtk_layer_init_for_window(GTK_WINDOW(self->popover));
-  gtk_layer_set_namespace(GTK_WINDOW(self->popover), "waybar-popup");   // distinct namespace: can be blurred without touching the bar
-  gtk_layer_set_layer(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_LAYER_TOP);
-  gtk_layer_set_anchor(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(self->popover), -1);   // absolute-screen positioning
-  gtk_layer_set_keyboard_mode(GTK_WINDOW(self->popover), GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
-  gtk_widget_add_events(self->popover, GDK_KEY_PRESS_MASK);
-  g_signal_connect(self->popover, "key-press-event", G_CALLBACK(on_pop_key), self);
-  g_signal_connect(self->popover, "notify::has-toplevel-focus", G_CALLBACK(on_pop_focus), self);
+  wbpop_init(&self->pop, self->box, wbpop_rebuild_cb, self);
+  self->popover = self->pop.win;
   g_signal_connect(self->box, "button-press-event", G_CALLBACK(on_click), self);
   gtk_container_add(root, self->box);
   gtk_widget_show_all(GTK_WIDGET(root));
@@ -522,6 +448,7 @@ void *wbcffi_init(const wbcffi_init_info *info,
 
 void wbcffi_deinit(void *instance) {
   Inst *self = instance;
+  wbpop_destroy(&self->pop);
   if (self->cancel) g_cancellable_cancel(self->cancel);
   if (self->timer) g_source_remove(self->timer);
   g_clear_object(&self->cancel);
