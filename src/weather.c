@@ -9,6 +9,7 @@
 //    IP-geolocated (ip-api.com) unless latitude/longitude or a city are configured.
 #define _GNU_SOURCE
 #include <gtk/gtk.h>
+#include <gtk-layer-shell.h>
 #include <gdk/gdkkeysyms.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
@@ -396,10 +397,21 @@ static gboolean on_pop_key(GtkWidget *w, GdkEventKey *e, gpointer d) {
   (void)d; if (e->keyval == GDK_KEY_Escape) { gtk_popover_popdown(GTK_POPOVER(w)); return TRUE; }
   return FALSE;
 }
+// The bar is a layer-shell surface with no keyboard focus by default, so a popover
+// never gets the input grab (Escape + click-outside don't dismiss). Grant the
+// surface on-demand keyboard focus while the popover is open, release it on close.
+static void pop_kb(GtkWidget *ref, gboolean on) {
+  GtkWidget *top = gtk_widget_get_toplevel(ref);
+  if (GTK_IS_WINDOW(top) && gtk_layer_is_layer_window(GTK_WINDOW(top)))
+    gtk_layer_set_keyboard_mode(GTK_WINDOW(top),
+      on ? GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND : GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+}
+static void on_pop_closed(GtkWidget *pop, gpointer data) { (void)pop; pop_kb(GTK_WIDGET(data), FALSE); }
 static gboolean on_click(GtkWidget *w, GdkEventButton *ev, gpointer data) {
   (void)w; if (ev->button != 1) return FALSE;
   Inst *self = data;
   rebuild_popover(self);
+  pop_kb(self->box, TRUE);
   gtk_popover_popup(GTK_POPOVER(self->popover));
   gtk_widget_grab_focus(self->popover);   // so Escape reaches it
   return TRUE;
@@ -455,6 +467,7 @@ void *wbcffi_init(const wbcffi_init_info *info,
   gtk_popover_set_modal(GTK_POPOVER(self->popover), TRUE);   // click-outside dismisses
   gtk_widget_add_events(self->popover, GDK_KEY_PRESS_MASK);
   g_signal_connect(self->popover, "key-press-event", G_CALLBACK(on_pop_key), NULL);
+  g_signal_connect(self->popover, "closed", G_CALLBACK(on_pop_closed), self->box);
   g_signal_connect(self->box, "button-press-event", G_CALLBACK(on_click), self);
   gtk_container_add(root, self->box);
   gtk_widget_show_all(GTK_WIDGET(root));
