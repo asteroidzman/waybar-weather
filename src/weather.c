@@ -434,6 +434,7 @@ void *wbcffi_init(const wbcffi_init_info *info,
   // Content-sized layer-shell window popup (blurrable). Positioned under the pill;
   // closes on focus-loss + Escape.
   wbpop_init(&self->pop, self->box, wbpop_rebuild_cb, self);
+  wbpop_enable_geom_dump(&self->pop, "weather");
   self->popover = self->pop.win;
   g_signal_connect(self->box, "button-press-event", G_CALLBACK(on_click), self);
   gtk_container_add(root, self->box);
