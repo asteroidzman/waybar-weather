@@ -15,6 +15,12 @@ install: $(PLUGIN)
 	install -Dm644 -t $(DATADIR) assets/sunny.svg assets/night.svg assets/pcloudy.svg assets/npcloudy.svg assets/cloud.svg assets/fog.svg assets/rain.svg assets/pour.svg assets/snow.svg assets/heavy-snow.svg assets/tstorm.svg
 	@echo "installed to $(PREFIX)/$(PLUGIN) + icons in $(DATADIR)"
 
+test_weather: tests/test_weather.c src/weather.c $(WBCOMMON)/wbcommon.h
+	$(CC) $(CFLAGS) -o $@ tests/test_weather.c $(LDLIBS)
+
+test: test_weather
+	./test_weather
+
 clean:
-	rm -f $(PLUGIN)
-.PHONY: install clean
+	rm -f $(PLUGIN) test_weather
+.PHONY: install clean test
