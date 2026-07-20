@@ -1,5 +1,5 @@
 # Maintainer: ralf <ralf.wierzbicki@gmail.com>
-pkgname=waybar-weather
+pkgname=waybar-weather-cffi
 pkgver=1.0.0
 pkgrel=1
 pkgdesc='waybar CFFI plugin for weather (condition icon + temperature, hourly/daily popover)'
@@ -8,7 +8,10 @@ url='https://github.com/asteroidzman/waybar-weather'
 license=('MIT')
 depends=('waybar' 'gtk3' 'glib2' 'json-glib' 'gtk-layer-shell' 'curl')
 makedepends=('pkgconf' 'git')
-source=("git+$url.git#tag=$pkgver")
+# pkgname (waybar-weather-cffi) doesn't match the repo's own name
+# (waybar-weather -- the plain "waybar-weather" AUR name was already taken
+# by an unrelated package) so alias the source dir to $pkgname explicitly.
+source=("$pkgname::git+$url.git#tag=$pkgver")
 sha256sums=('SKIP')
 
 prepare() {
