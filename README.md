@@ -18,6 +18,9 @@ A [waybar](https://github.com/Alexays/Waybar) **CFFI plugin** for weather.
 
 ## Build & install
 
+Arch Linux: `yay -S waybar-weather-cffi` (AUR — named `-cffi` since
+`waybar-weather` was already taken by an unrelated package).
+
 Requires `gtk3`, `glib2`, `json-glib` (+dev headers), `curl`, and a C compiler.
 
 ```sh
