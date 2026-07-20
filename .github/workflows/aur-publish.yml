@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   aur-publish:
-    name: Publish waybar-weather to the AUR
+    name: Publish waybar-weather-cffi to the AUR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
       - name: Publish to the AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4
         with:
-          pkgname: waybar-weather
+          pkgname: waybar-weather-cffi
           pkgbuild: ./PKGBUILD
           commit_username: asteroidzman
           commit_email: asteroidzman@users.noreply.github.com
